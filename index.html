@@ -85,6 +85,14 @@
   .card .pr.owned{color:#7affba}
   .card.equipped .pr{color:var(--neon)}
   .hint{font-size:11px;color:#7c84ad;letter-spacing:1px;max-width:300px;line-height:1.5}
+  .ctrl{display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:4px}
+  .ctrl-lbl{font-size:11px;letter-spacing:3px;color:#8089b0;font-weight:700}
+  .seg{display:flex;gap:6px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);
+    border-radius:14px;padding:5px}
+  .seg button{font-family:inherit;font-weight:800;letter-spacing:1px;font-size:13px;color:#aeb6e0;cursor:pointer;
+    border:none;background:transparent;border-radius:10px;padding:10px 16px;transition:all .15s}
+  .seg button.on{color:#04121a;background:linear-gradient(180deg,#7afcff,var(--neon));
+    box-shadow:0 0 14px rgba(0,229,255,.55)}
   .toast{position:absolute;bottom:26px;left:50%;transform:translateX(-50%);background:rgba(8,8,22,.92);
     border:1px solid rgba(255,255,255,.12);color:#fff;padding:10px 18px;border-radius:14px;font-size:13px;font-weight:600;
     opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:20}
@@ -115,7 +123,14 @@
     <div class="stat"><div>BEST<b id="menuBest">0</b></div></div>
     <button class="btn" id="playBtn">PLAY</button>
     <button class="btn alt" id="skinsBtn">SKINS</button>
-    <div class="hint">← → / A D · oder Bildschirmhälfte tippen · oder Handy neigen</div>
+    <div class="ctrl">
+      <div class="ctrl-lbl">STEUERUNG</div>
+      <div class="seg" id="ctrlSeg">
+        <button data-mode="tap">◀ TIPPEN ▶</button>
+        <button data-mode="tilt">↺ NEIGEN</button>
+      </div>
+    </div>
+    <div class="hint" id="ctrlHint"></div>
   </div>
 
   <!-- SKINS -->
@@ -168,6 +183,7 @@ let coins  = LS.get('coins',0);
 let muted  = LS.get('muted',false);
 let owned  = LS.get('owned',['volt']);
 let equipped = LS.get('skin','volt');
+let controlMode = LS.get('control','tap');   // 'tap' | 'tilt'
 
 //==================================================================== SKINS
 const SKINS = [
@@ -307,7 +323,7 @@ function setTouchDir(){
   pointers.forEach(px=>{ if(px < W/2) l=true; else r=true; });
   moveInput = (l&&!r)?-1 : (r&&!l)?1 : 0;
 }
-cv.addEventListener('pointerdown',e=>{ if(state!==ST.PLAY)return; pointers.set(e.pointerId, relX(e)); setTouchDir(); });
+cv.addEventListener('pointerdown',e=>{ if(state!==ST.PLAY||controlMode!=='tap')return; pointers.set(e.pointerId, relX(e)); setTouchDir(); });
 cv.addEventListener('pointermove',e=>{ if(pointers.has(e.pointerId)){pointers.set(e.pointerId,relX(e)); setTouchDir();} });
 cv.addEventListener('pointerup',e=>{ pointers.delete(e.pointerId); setTouchDir(); });
 cv.addEventListener('pointercancel',e=>{ pointers.delete(e.pointerId); setTouchDir(); });
@@ -334,11 +350,12 @@ function burst(x,y,color,n,spd,life){
 function update(){
   t++;
   const prevY=player.y;   // for crossing-based hazard hit tests
-  // ---- input -> velocity
-  let dir = moveInput;
+  // ---- input -> velocity (keyboard always; touch/tilt per chosen control mode)
+  let dir = 0;
   if(keys['arrowleft']||keys['a']) dir=-1;
-  if(keys['arrowright']||keys['d']) dir=1;
-  if(dir===0 && tiltOn && Math.abs(tilt)>.06) dir=tilt;     // tilt analog
+  else if(keys['arrowright']||keys['d']) dir=1;
+  else if(controlMode==='tap') dir = moveInput;                       // tap screen halves
+  else if(controlMode==='tilt' && tiltOn && Math.abs(tilt)>.06) dir=tilt;  // tilt analog
   if(dir!==0){ player.vx += MOVE_ACC*dir; player.dir = dir<0?-1:1; }
   else player.vx *= FRICTION;
   player.vx = Math.max(-MOVE_MAX, Math.min(MOVE_MAX, player.vx));
@@ -830,13 +847,29 @@ function refreshCoinLabels(){
 }
 
 // menu buttons
-$('playBtn').onclick=()=>{ try{AC=AC||new(window.AudioContext||window.webkitAudioContext)();AC.resume();}catch(e){} enableTilt(); startGame(); };
+$('playBtn').onclick=()=>{ try{AC=AC||new(window.AudioContext||window.webkitAudioContext)();AC.resume();}catch(e){} if(controlMode==='tilt') enableTilt(); startGame(); };
 $('skinsBtn').onclick=()=>{ buildSkinGrid(); show('skins'); };
 $('backBtn').onclick=()=>{ refreshCoinLabels(); show('menu'); };
 $('againBtn').onclick=()=> startGame();
 $('menuBtn2').onclick=()=>{ refreshCoinLabels(); show('menu'); };
 $('muteBtn').onclick=()=>{ muted=!muted; LS.set('muted',muted); $('muteBtn').textContent=muted?'🔇':'🔊'; };
 $('muteBtn').textContent=muted?'🔇':'🔊';
+
+// control mode toggle (tap halves vs tilt)
+function applyControlUI(){
+  document.querySelectorAll('#ctrlSeg button').forEach(b=>b.classList.toggle('on', b.dataset.mode===controlMode));
+  $('ctrlHint').textContent = controlMode==='tilt'
+    ? 'Handy neigen zum Steuern · am PC: ← → / A D'
+    : 'Linke / rechte Bildschirmhälfte tippen · am PC: ← → / A D';
+}
+function setControl(mode){
+  if(mode!=='tap'&&mode!=='tilt') return;
+  controlMode=mode; LS.set('control',mode); pointers.clear(); moveInput=0;
+  if(mode==='tilt') enableTilt();   // toggle click is a user gesture → ok to request iOS tilt permission
+  applyControlUI();
+}
+document.querySelectorAll('#ctrlSeg button').forEach(b=>{ b.onclick=()=>setControl(b.dataset.mode); });
+applyControlUI();
 
 //==================================================================== SKIN GRID + PREVIEWS
 function buildSkinGrid(){
