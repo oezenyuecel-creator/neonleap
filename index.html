@@ -348,8 +348,8 @@ cv.addEventListener('pointermove',e=>{ if(controlMode==='tap'&&e.pointerId===act
 cv.addEventListener('pointerup',e=>{ if(e.pointerId===activePtr){ activePtr=null; touchTargetX=null; } });
 cv.addEventListener('pointercancel',e=>{ if(e.pointerId===activePtr){ activePtr=null; touchTargetX=null; } });
 function relX(e){ const r=cv.getBoundingClientRect(); return e.clientX-r.left; }
-// keep the finger target on-screen so the hero never runs off the edge / wraps in tap mode
-function clampTargetX(x){ const m=player.w*0.5; return Math.max(m, Math.min(W-m, x)); }
+// keep the finger target to a valid on-screen column (steering may still wrap around the edge toward it)
+function clampTargetX(x){ return Math.max(0, Math.min(W, x)); }
 
 // tilt — store raw angle; neutral is calibrated to how you hold the phone at run start
 window.addEventListener('deviceorientation',e=>{ if(e.gamma!=null) rawGamma=e.gamma; });
@@ -377,7 +377,9 @@ function update(){
   if(keys['arrowleft']||keys['a']) targetVX = -MOVE_MAX;
   else if(keys['arrowright']||keys['d']) targetVX = MOVE_MAX;
   else if(controlMode==='tap' && touchTargetX!=null){
-    const diff = touchTargetX - player.x;                 // steer toward finger, ease off as you arrive
+    let diff = touchTargetX - player.x;                   // steer toward finger, ease off as you arrive
+    if(diff > W*0.5) diff -= W;                           // wrap-aware: take the shorter way around the edge
+    else if(diff < -W*0.5) diff += W;
     targetVX = Math.max(-MOVE_MAX, Math.min(MOVE_MAX, diff*STEER));
   } else if(controlMode==='tilt' && tiltOn){
     let tv = (rawGamma - tiltZero)/TILT_SENS;
@@ -559,6 +561,9 @@ function draw(){
     ctx.restore();
   }
   drawPlayer();
+  // also render the hero on the opposite edge while straddling the wrap seam (seamless wrap)
+  if(player.x < 30) drawPlayer(player.x + W);
+  else if(player.x > W-30) drawPlayer(player.x - W);
   for(const pa of particles){
     ctx.globalAlpha=Math.max(0,pa.life/pa.max);
     ctx.fillStyle=pa.color; ctx.shadowColor=pa.color; ctx.shadowBlur=8;
@@ -752,9 +757,9 @@ function capeColors(sk){
   if(sk.rainbow){ const h=(t*2)%360; return [`hsl(${h},100%,65%)`,`hsl(${(h+60)%360},100%,55%)`,`hsl(${(h+120)%360},100%,50%)`]; }
   return sk.cape;
 }
-function drawPlayer(){
+function drawPlayer(xo){
   const sk=skinById(equipped);
-  const px=player.x, py=player.y;
+  const px=(xo==null?player.x:xo), py=player.y;
   const sq=player.squash;
   const sxw = 1 + (sq>0? sq*0.25 : 0) - (sq<0?0:0);
   const syh = 1 - (sq>0? sq*0.2 : 0) + (sq*0? 0:0);
