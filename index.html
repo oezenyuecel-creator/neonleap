@@ -125,7 +125,14 @@
     <div class="stat"><div>BEST<b id="menuBest">0</b></div></div>
     <button class="btn" id="playBtn">PLAY</button>
     <button class="btn alt" id="skinsBtn">SKINS</button>
-    <div class="hint">⚙️ Steuerung &amp; Ton — Zahnrad oben links</div>
+    <div class="ctrl">
+      <div class="ctrl-lbl">STEUERUNG</div>
+      <div class="seg js-ctrl-seg">
+        <button data-mode="tap">◀ TIPPEN ▶</button>
+        <button data-mode="tilt">↺ NEIGEN</button>
+      </div>
+      <div class="hint js-ctrl-hint"></div>
+    </div>
   </div>
 
   <!-- SETTINGS -->
@@ -133,11 +140,11 @@
     <div class="title" style="font-size:34px">EINSTELLUNGEN</div>
     <div class="ctrl">
       <div class="ctrl-lbl">STEUERUNG</div>
-      <div class="seg" id="ctrlSeg">
+      <div class="seg js-ctrl-seg">
         <button data-mode="tap">◀ TIPPEN ▶</button>
         <button data-mode="tilt">↺ NEIGEN</button>
       </div>
-      <div class="hint" id="ctrlHint"></div>
+      <div class="hint js-ctrl-hint"></div>
     </div>
     <div class="ctrl">
       <div class="ctrl-lbl">TON</div>
@@ -336,11 +343,13 @@ window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;});
 
 // touch — follow finger: the hero steers toward where you press/drag (precise, clean stop on release)
 cv.addEventListener('pointerdown',e=>{ if(state!==ST.PLAY||controlMode!=='tap')return;
-  activePtr=e.pointerId; touchTargetX=relX(e); try{cv.setPointerCapture(e.pointerId);}catch(_){} });
-cv.addEventListener('pointermove',e=>{ if(controlMode==='tap'&&e.pointerId===activePtr) touchTargetX=relX(e); });
+  activePtr=e.pointerId; touchTargetX=clampTargetX(relX(e)); try{cv.setPointerCapture(e.pointerId);}catch(_){} });
+cv.addEventListener('pointermove',e=>{ if(controlMode==='tap'&&e.pointerId===activePtr) touchTargetX=clampTargetX(relX(e)); });
 cv.addEventListener('pointerup',e=>{ if(e.pointerId===activePtr){ activePtr=null; touchTargetX=null; } });
 cv.addEventListener('pointercancel',e=>{ if(e.pointerId===activePtr){ activePtr=null; touchTargetX=null; } });
 function relX(e){ const r=cv.getBoundingClientRect(); return e.clientX-r.left; }
+// keep the finger target on-screen so the hero never runs off the edge / wraps in tap mode
+function clampTargetX(x){ const m=player.w*0.5; return Math.max(m, Math.min(W-m, x)); }
 
 // tilt — store raw angle; neutral is calibrated to how you hold the phone at run start
 window.addEventListener('deviceorientation',e=>{ if(e.gamma!=null) rawGamma=e.gamma; });
@@ -886,10 +895,11 @@ $('settingsBack').onclick=()=> show('menu');
 
 // control mode toggle (tap halves vs tilt)
 function applyControlUI(){
-  document.querySelectorAll('#ctrlSeg button').forEach(b=>b.classList.toggle('on', b.dataset.mode===controlMode));
-  $('ctrlHint').textContent = controlMode==='tilt'
+  document.querySelectorAll('.js-ctrl-seg button').forEach(b=>b.classList.toggle('on', b.dataset.mode===controlMode));
+  const txt = controlMode==='tilt'
     ? 'Handy leicht neigen — der Held folgt · am PC: ← → / A D'
-    : 'Daumen auf den Bildschirm legen & ziehen — der Held folgt · am PC: ← → / A D';
+    : 'Daumen auflegen & ziehen — der Held folgt · am PC: ← → / A D';
+  document.querySelectorAll('.js-ctrl-hint').forEach(h=> h.textContent=txt);
 }
 function setControl(mode){
   if(mode!=='tap'&&mode!=='tilt') return;
@@ -897,7 +907,7 @@ function setControl(mode){
   if(mode==='tilt') enableTilt();   // toggle click is a user gesture → ok to request iOS tilt permission
   applyControlUI();
 }
-document.querySelectorAll('#ctrlSeg button').forEach(b=>{ b.onclick=()=>setControl(b.dataset.mode); });
+document.querySelectorAll('.js-ctrl-seg button').forEach(b=>{ b.onclick=()=>setControl(b.dataset.mode); });
 
 // sound toggle
 function applySoundUI(){
