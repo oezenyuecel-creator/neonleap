@@ -252,7 +252,7 @@ let rawGamma=0, tiltZero=0, tiltOn=false;  // tilt with neutral calibration
 let biome=null, lastBiomeIdx=0;
 
 const G = 0.42, JUMP = -12.4, SPRING = -22, MOVE_MAX = 8.5, FRICTION = .80;
-const STEER = 0.34, EASE = 0.35, TILT_SENS = 18, TILT_DEAD = 0.08;
+const FOLLOW = 0.65, MAXMOVE = 28, EASE = 0.42, TILT_SENS = 18, TILT_DEAD = 0.08;
 const JET_DUR = 135, MAG_DUR = 380;   // power-up durations (frames)
 
 //==================================================================== BIOMES (escalate as you climb)
@@ -345,8 +345,8 @@ window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;});
 cv.addEventListener('pointerdown',e=>{ if(state!==ST.PLAY||controlMode!=='tap')return;
   activePtr=e.pointerId; touchTargetX=clampTargetX(relX(e)); try{cv.setPointerCapture(e.pointerId);}catch(_){} });
 cv.addEventListener('pointermove',e=>{ if(controlMode==='tap'&&e.pointerId===activePtr) touchTargetX=clampTargetX(relX(e)); });
-cv.addEventListener('pointerup',e=>{ if(e.pointerId===activePtr){ activePtr=null; touchTargetX=null; } });
-cv.addEventListener('pointercancel',e=>{ if(e.pointerId===activePtr){ activePtr=null; touchTargetX=null; } });
+cv.addEventListener('pointerup',e=>{ if(e.pointerId===activePtr){ activePtr=null; touchTargetX=null; player.vx=0; } });
+cv.addEventListener('pointercancel',e=>{ if(e.pointerId===activePtr){ activePtr=null; touchTargetX=null; player.vx=0; } });
 function relX(e){ const r=cv.getBoundingClientRect(); return e.clientX-r.left; }
 // keep the finger target to a valid on-screen column (steering may still wrap around the edge toward it)
 function clampTargetX(x){ return Math.max(0, Math.min(W, x)); }
@@ -372,28 +372,27 @@ function burst(x,y,color,n,spd,life){
 function update(){
   t++;
   const prevY=player.y;   // for crossing-based hazard hit tests
-  // ---- input -> target velocity (keyboard always; touch follows finger; tilt is analog)
-  let targetVX = null;
-  if(keys['arrowleft']||keys['a']) targetVX = -MOVE_MAX;
-  else if(keys['arrowright']||keys['d']) targetVX = MOVE_MAX;
-  else if(controlMode==='tap' && touchTargetX!=null){
-    let diff = touchTargetX - player.x;                   // steer toward finger, ease off as you arrive
-    if(diff > W*0.5) diff -= W;                           // wrap-aware: take the shorter way around the edge
-    else if(diff < -W*0.5) diff += W;
-    targetVX = Math.max(-MOVE_MAX, Math.min(MOVE_MAX, diff*STEER));
+  // ---- horizontal: tap follows the finger DIRECTLY (tight, no velocity rubber-band); keyboard/tilt = velocity
+  const kb = (keys['arrowleft']||keys['a']) ? -1 : (keys['arrowright']||keys['d']) ? 1 : 0;
+  if(kb!==0){
+    player.vx += (kb*MOVE_MAX - player.vx)*EASE;
+    player.x += player.vx;
+  } else if(controlMode==='tap' && touchTargetX!=null){
+    let diff = touchTargetX - player.x;
+    if(diff > W*0.5) diff -= W; else if(diff < -W*0.5) diff += W;          // wrap-aware shortest path
+    const move = Math.max(-MAXMOVE, Math.min(MAXMOVE, diff*FOLLOW));        // snap straight toward the finger
+    player.x += move;
+    player.vx = move;                                                       // drives cape sway + facing
   } else if(controlMode==='tilt' && tiltOn){
     let tv = (rawGamma - tiltZero)/TILT_SENS;
-    if(Math.abs(tv) > TILT_DEAD){ tv = Math.max(-1, Math.min(1, tv)); targetVX = tv*MOVE_MAX; }
-  }
-  if(targetVX!=null){
-    player.vx += (targetVX - player.vx)*EASE;             // responsive, smooth — no jitter
-    if(Math.abs(player.vx)>0.25) player.dir = player.vx<0?-1:1;
+    if(Math.abs(tv) > TILT_DEAD){ tv = Math.max(-1, Math.min(1, tv)); player.vx += (tv*MOVE_MAX - player.vx)*EASE; }
+    else player.vx *= FRICTION;
+    player.x += player.vx;
   } else {
-    player.vx *= FRICTION;                                // crisp stop on release
-    if(Math.abs(player.vx)<0.05) player.vx = 0;
+    player.vx *= FRICTION; if(Math.abs(player.vx)<0.05) player.vx = 0;      // crisp stop
+    player.x += player.vx;
   }
-  player.vx = Math.max(-MOVE_MAX, Math.min(MOVE_MAX, player.vx));
-  player.x += player.vx;
+  if(Math.abs(player.vx)>0.25) player.dir = player.vx<0?-1:1;
   // screen wrap
   if(player.x < -player.w/2) player.x = W+player.w/2;
   else if(player.x > W+player.w/2) player.x = -player.w/2;
