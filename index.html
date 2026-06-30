@@ -240,11 +240,12 @@ const player = { x:0,y:0, vx:0,vy:0, w:26,h:30, dir:1, squash:0, faceX:0, bestY:
 let cameraY=0, platforms=[], orbs=[], particles=[], stars=[], powerups=[], hazards=[], skyline=[];
 let topY=0, score=0, runCoins=0, combo=0, maxCombo=0, comboTimer=0;
 let shake=0, t=0, started=false;
-let moveInput=0;        // -1 left, 1 right, 0 none from keys/touch
-let tilt=0, tiltOn=false;
+let touchTargetX=null, activePtr=null;     // follow-finger steering (tap mode)
+let rawGamma=0, tiltZero=0, tiltOn=false;  // tilt with neutral calibration
 let biome=null, lastBiomeIdx=0;
 
-const G = 0.42, JUMP = -12.4, SPRING = -22, MOVE_ACC = 0.9, MOVE_MAX = 7.4, FRICTION = .86;
+const G = 0.42, JUMP = -12.4, SPRING = -22, MOVE_MAX = 8.5, FRICTION = .80;
+const STEER = 0.34, EASE = 0.35, TILT_SENS = 18, TILT_DEAD = 0.08;
 const JET_DUR = 135, MAG_DUR = 380;   // power-up durations (frames)
 
 //==================================================================== BIOMES (escalate as you climb)
@@ -278,6 +279,7 @@ function reset(){
   cameraY=0; score=0; runCoins=0; combo=0; maxCombo=0; comboTimer=0; shake=0;
   player.x=W/2; player.y=H-110; player.vx=0; player.vy=JUMP; player.dir=1; player.squash=0; player.bestY=player.y;
   player.jetpack=0; player.magnet=0;
+  touchTargetX=null; activePtr=null;
   lastBiomeIdx=0; biome=biomeState();
   // starting platform
   platforms.push({x:W/2-45,y:H-80,w:90,h:14,type:'normal',vx:0});
@@ -332,25 +334,20 @@ window.addEventListener('keydown',e=>{
 });
 window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;});
 
-// touch / pointer halves
-let pointers=new Map();
-function setTouchDir(){
-  let l=false,r=false;
-  pointers.forEach(px=>{ if(px < W/2) l=true; else r=true; });
-  moveInput = (l&&!r)?-1 : (r&&!l)?1 : 0;
-}
-cv.addEventListener('pointerdown',e=>{ if(state!==ST.PLAY||controlMode!=='tap')return; pointers.set(e.pointerId, relX(e)); setTouchDir(); });
-cv.addEventListener('pointermove',e=>{ if(pointers.has(e.pointerId)){pointers.set(e.pointerId,relX(e)); setTouchDir();} });
-cv.addEventListener('pointerup',e=>{ pointers.delete(e.pointerId); setTouchDir(); });
-cv.addEventListener('pointercancel',e=>{ pointers.delete(e.pointerId); setTouchDir(); });
+// touch — follow finger: the hero steers toward where you press/drag (precise, clean stop on release)
+cv.addEventListener('pointerdown',e=>{ if(state!==ST.PLAY||controlMode!=='tap')return;
+  activePtr=e.pointerId; touchTargetX=relX(e); try{cv.setPointerCapture(e.pointerId);}catch(_){} });
+cv.addEventListener('pointermove',e=>{ if(controlMode==='tap'&&e.pointerId===activePtr) touchTargetX=relX(e); });
+cv.addEventListener('pointerup',e=>{ if(e.pointerId===activePtr){ activePtr=null; touchTargetX=null; } });
+cv.addEventListener('pointercancel',e=>{ if(e.pointerId===activePtr){ activePtr=null; touchTargetX=null; } });
 function relX(e){ const r=cv.getBoundingClientRect(); return e.clientX-r.left; }
 
-// tilt
-window.addEventListener('deviceorientation',e=>{ if(tiltOn && e.gamma!=null) tilt = Math.max(-1,Math.min(1, e.gamma/22)); });
+// tilt — store raw angle; neutral is calibrated to how you hold the phone at run start
+window.addEventListener('deviceorientation',e=>{ if(e.gamma!=null) rawGamma=e.gamma; });
 function enableTilt(){
   if(typeof DeviceOrientationEvent!=='undefined' && DeviceOrientationEvent.requestPermission){
-    DeviceOrientationEvent.requestPermission().then(p=>{ if(p==='granted') tiltOn=true; }).catch(()=>{});
-  } else tiltOn=true;
+    DeviceOrientationEvent.requestPermission().then(p=>{ if(p==='granted'){ tiltOn=true; tiltZero=rawGamma; } }).catch(()=>{});
+  } else { tiltOn=true; tiltZero=rawGamma; }
 }
 
 //==================================================================== PARTICLES
@@ -366,14 +363,24 @@ function burst(x,y,color,n,spd,life){
 function update(){
   t++;
   const prevY=player.y;   // for crossing-based hazard hit tests
-  // ---- input -> velocity (keyboard always; touch/tilt per chosen control mode)
-  let dir = 0;
-  if(keys['arrowleft']||keys['a']) dir=-1;
-  else if(keys['arrowright']||keys['d']) dir=1;
-  else if(controlMode==='tap') dir = moveInput;                       // tap screen halves
-  else if(controlMode==='tilt' && tiltOn && Math.abs(tilt)>.06) dir=tilt;  // tilt analog
-  if(dir!==0){ player.vx += MOVE_ACC*dir; player.dir = dir<0?-1:1; }
-  else player.vx *= FRICTION;
+  // ---- input -> target velocity (keyboard always; touch follows finger; tilt is analog)
+  let targetVX = null;
+  if(keys['arrowleft']||keys['a']) targetVX = -MOVE_MAX;
+  else if(keys['arrowright']||keys['d']) targetVX = MOVE_MAX;
+  else if(controlMode==='tap' && touchTargetX!=null){
+    const diff = touchTargetX - player.x;                 // steer toward finger, ease off as you arrive
+    targetVX = Math.max(-MOVE_MAX, Math.min(MOVE_MAX, diff*STEER));
+  } else if(controlMode==='tilt' && tiltOn){
+    let tv = (rawGamma - tiltZero)/TILT_SENS;
+    if(Math.abs(tv) > TILT_DEAD){ tv = Math.max(-1, Math.min(1, tv)); targetVX = tv*MOVE_MAX; }
+  }
+  if(targetVX!=null){
+    player.vx += (targetVX - player.vx)*EASE;             // responsive, smooth — no jitter
+    if(Math.abs(player.vx)>0.25) player.dir = player.vx<0?-1:1;
+  } else {
+    player.vx *= FRICTION;                                // crisp stop on release
+    if(Math.abs(player.vx)<0.05) player.vx = 0;
+  }
   player.vx = Math.max(-MOVE_MAX, Math.min(MOVE_MAX, player.vx));
   player.x += player.vx;
   // screen wrap
@@ -845,6 +852,7 @@ function show(id){ ['menu','skins','over','settings'].forEach(s=>$(s).classList.
   if(id) $(id).classList.remove('hidden'); }
 function startGame(){
   reset(); state=ST.PLAY; show(null); $('hud').classList.remove('hidden');
+  if(controlMode==='tilt') tiltZero=rawGamma;   // calibrate neutral to current hold
   if(AC && AC.state==='suspended') AC.resume();
 }
 function gameOver(){
@@ -880,12 +888,12 @@ $('settingsBack').onclick=()=> show('menu');
 function applyControlUI(){
   document.querySelectorAll('#ctrlSeg button').forEach(b=>b.classList.toggle('on', b.dataset.mode===controlMode));
   $('ctrlHint').textContent = controlMode==='tilt'
-    ? 'Handy neigen zum Steuern · am PC: ← → / A D'
-    : 'Linke / rechte Bildschirmhälfte tippen · am PC: ← → / A D';
+    ? 'Handy leicht neigen — der Held folgt · am PC: ← → / A D'
+    : 'Daumen auf den Bildschirm legen & ziehen — der Held folgt · am PC: ← → / A D';
 }
 function setControl(mode){
   if(mode!=='tap'&&mode!=='tilt') return;
-  controlMode=mode; LS.set('control',mode); pointers.clear(); moveInput=0;
+  controlMode=mode; LS.set('control',mode); touchTargetX=null; activePtr=null;
   if(mode==='tilt') enableTilt();   // toggle click is a user gesture → ok to request iOS tilt permission
   applyControlUI();
 }
