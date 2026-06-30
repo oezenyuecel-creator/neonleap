@@ -24,7 +24,7 @@ ein **Charakter mit verpixeltem, wehendem Neon-Umhang**, dessen Skin (Body + Cap
 - **Skins**: 6 Stück (VOLT, MAGMA, TOXIC, NOVA, FROST, SPECTRUM/Rainbow), per Orbs freischaltbar & equippbar
 - **Verpixelter Neon-Cape**: geflärter Pixel-Cloak mit Glow, der wogt und entgegen der Laufrichtung trailt
 - **Juice**: Partikel, Screenshake, Combo-System, Squash-&-Stretch, Web-Audio-SFX
-- **Steuerung umschaltbar** (im Menü, wird gespeichert): **Tippen** (linke/rechte Bildschirmhälfte) ODER **Neigen** (Tilt). Am PC immer ← → / A D. Default: Tippen (kein Permission-Prompt, läuft überall)
+- **⚙️ Einstellungs-Screen** (Zahnrad oben links, immer sichtbar): **Steuerung** umschaltbar — **Tippen** (linke/rechte Bildschirmhälfte) ODER **Neigen** (Tilt) — plus **Ton** an/aus. Alles wird gespeichert. Am PC immer ← → / A D. Default: Tippen (kein Permission-Prompt, läuft überall)
 - **Persistenz** (localStorage): Bestscore, Orbs, freigeschaltete/equippte Skins, Mute
 - Mobile-first, responsiv, hochauflösend (DPR-aware Canvas)
 
