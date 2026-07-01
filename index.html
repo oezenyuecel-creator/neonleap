@@ -479,26 +479,27 @@ function update(){
     }
   }
 
-  // ---- hazards (biome-specific)
+  // ---- hazards (biome-specific). Jetpack = you rocket THROUGH everything (immune)
+  const invuln = player.jetpack>0;
   for(const h of hazards){
     if(h.type==='laser'){
       const cp=(t+h.phase)%h.period, on=cp<h.onDur;
-      if(on && ((prevY-h.y)*(player.y-h.y)<=0 || Math.abs(player.y-h.y)<8)){ gameOver(); return; }
+      if(!invuln && on && ((prevY-h.y)*(player.y-h.y)<=0 || Math.abs(player.y-h.y)<8)){ gameOver(); return; }
     } else if(h.type==='ufo'){
       h.x+=h.vx; if(h.x<16||h.x>W-16) h.vx*=-1; h.ang+=0.05;
       const dx=h.x-player.x, dy=h.y-player.y, rr2=h.r+player.w*0.4;
-      if(dx*dx+dy*dy < rr2*rr2){ gameOver(); return; }
+      if(!invuln && dx*dx+dy*dy < rr2*rr2){ gameOver(); return; }
     } else if(h.type==='saw'){
       h.x+=h.vx; if(h.x<14||h.x>W-14) h.vx*=-1; h.ang+=0.4;
       const dx=h.x-player.x, dy=h.y-player.y, rr2=h.r+player.w*0.32;
-      if(dx*dx+dy*dy < rr2*rr2){ gameOver(); return; }
+      if(!invuln && dx*dx+dy*dy < rr2*rr2){ gameOver(); return; }
     } else {   // hole: pulls you in
       h.ang+=0.12;
       const hdx=h.x-player.x, hdy=h.y-player.y, hd=Math.hypot(hdx,hdy)||1, pull=150;
       if(hd<pull){
-        let f=(1-hd/pull)*0.95; if(player.jetpack>0) f*=0.4;   // jetpack lets you power out
+        let f=(1-hd/pull)*0.95; if(invuln) f*=0.4;   // jetpack lets you power out
         player.vx+=hdx/hd*f*2.4; player.vy+=hdy/hd*f*2.0;
-        if(hd<h.r*0.7 && player.jetpack<=0){ gameOver(); return; }
+        if(hd<h.r*0.7 && !invuln){ gameOver(); return; }
       }
     }
   }
@@ -560,6 +561,12 @@ function draw(){
     ctx.save(); ctx.globalAlpha=0.22+0.12*Math.sin(t*0.3);
     ctx.strokeStyle='#00e5ff'; ctx.lineWidth=2; ctx.shadowColor='#00e5ff'; ctx.shadowBlur=14;
     ctx.beginPath(); ctx.arc(player.x,player.y,42+Math.sin(t*0.2)*4,0,6.28); ctx.stroke();
+    ctx.restore();
+  }
+  if(player.jetpack>0){                       // invulnerability shield while rocketing
+    ctx.save(); ctx.globalAlpha=0.35+0.18*Math.sin(t*0.5);
+    ctx.strokeStyle='#ffd24a'; ctx.lineWidth=2.5; ctx.shadowColor='#ffae00'; ctx.shadowBlur=18;
+    ctx.beginPath(); ctx.arc(player.x,player.y,32+Math.sin(t*0.35)*3,0,6.28); ctx.stroke();
     ctx.restore();
   }
   drawPlayer();
