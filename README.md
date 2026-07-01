@@ -23,7 +23,9 @@ ein **Charakter mit verpixeltem, wehendem Neon-Umhang**, dessen Skin (Body + Cap
 - **Orbs** als Währung — fließen in dauerhaftes Orb-Konto
 - **Skins**: 6 Stück (VOLT, MAGMA, TOXIC, NOVA, FROST, SPECTRUM/Rainbow), per Orbs freischaltbar & equippbar
 - **Verpixelter Neon-Cape**: geflärter Pixel-Cloak mit Glow, der wogt und entgegen der Laufrichtung trailt
+- **Adaptive Musik** (prozedural, Web Audio, keine Dateien): Synthwave-Loop (Am–F–C–G), der pro Biom Layer aufbaut — Bass+Pad (Synthwave) → +Arp+Beat (Cyber City) → treibend (Deep Space) → voll (Glitch Void). Respektiert den Ton-Schalter.
 - **Juice**: Partikel, Screenshake, Combo-System, Squash-&-Stretch, Web-Audio-SFX
+- **Fairness**: Jetpack = unverwundbar gegen alle Hazards (goldener Schutz-Ring)
 - **⚙️ Einstellungs-Screen** (Zahnrad oben links, immer sichtbar): **Steuerung** umschaltbar — **Tippen** (Finger-Folge: der Held steuert präzise dorthin, wo der Daumen liegt/zieht, mit sanfter Ankunft & sauberem Stopp) ODER **Neigen** (Tilt, mit Neutral-Kalibrierung beim Start) — plus **Ton** an/aus. Alles wird gespeichert. Am PC immer ← → / A D. Default: Tippen (kein Permission-Prompt, läuft überall)
 - **Persistenz** (localStorage): Bestscore, Orbs, freigeschaltete/equippte Skins, Mute
 - Mobile-first, responsiv, hochauflösend (DPR-aware Canvas)

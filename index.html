@@ -302,8 +302,9 @@ const Music = (()=>{
 const ST = { MENU:0, PLAY:1, OVER:2 };
 let state = ST.MENU;
 
-const player = { x:0,y:0, vx:0,vy:0, w:26,h:30, dir:1, squash:0, faceX:0, bestY:0, jetpack:0, magnet:0 };
-let cameraY=0, platforms=[], orbs=[], particles=[], stars=[], powerups=[], hazards=[], skyline=[];
+const player = { x:0,y:0, vx:0,vy:0, w:26,h:30, dir:1, squash:0, faceX:0, bestY:0, jetpack:0, magnet:0, shield:false, iFrames:0 };
+let cameraY=0, platforms=[], orbs=[], particles=[], stars=[], powerups=[], hazards=[], skyline=[], popups=[];
+let nextMilestone=1000, beatBest=false;
 let topY=0, score=0, runCoins=0, combo=0, maxCombo=0, comboTimer=0;
 let shake=0, t=0, started=false;
 let activePtr=null, stickAnchor=0, stickCur=0;  // floating analog stick (tap mode)
@@ -341,10 +342,11 @@ function buildStars(){
 //==================================================================== PLATFORM GEN
 function difficulty(){ return Math.min(1, score/4500); }
 function reset(){
-  platforms=[]; orbs=[]; particles=[]; powerups=[]; hazards=[];
+  platforms=[]; orbs=[]; particles=[]; powerups=[]; hazards=[]; popups=[];
   cameraY=0; score=0; runCoins=0; combo=0; maxCombo=0; comboTimer=0; shake=0;
+  nextMilestone=1000; beatBest=false;
   player.x=W/2; player.y=H-110; player.vx=0; player.vy=JUMP; player.dir=1; player.squash=0; player.bestY=player.y;
-  player.jetpack=0; player.magnet=0;
+  player.jetpack=0; player.magnet=0; player.shield=false; player.iFrames=0;
   activePtr=null; stickAnchor=0; stickCur=0;
   lastBiomeIdx=0; biome=biomeState();
   // starting platform
@@ -370,10 +372,10 @@ function addPlatform(){
   platforms.push(p);
   // occasional orb floating above a platform
   if(Math.random() < .22) orbs.push({x:x+w/2+(Math.random()*30-15),y:topY-26-Math.random()*18,r:8,got:false,bob:Math.random()*6.28});
-  // rare power-up sitting on the platform
-  if(type==='normal' && Math.random() < .05){
-    powerups.push({x:x+w/2,y:topY-20,r:13,got:false,bob:Math.random()*6.28,
-      kind: Math.random()<.5?'jet':'mag'});
+  // rare power-up sitting on the platform (jetpack / magnet / shield)
+  if(type==='normal' && Math.random() < .055){
+    const k=Math.random(), kind = k<.34?'jet' : k<.67?'mag' : 'shield';
+    powerups.push({x:x+w/2,y:topY-20,r:13,got:false,bob:Math.random()*6.28, kind});
   }
   // biome-specific hazard — only after a short warm-up
   if(score>650 && Math.random() < .03 + d*.055){
@@ -424,6 +426,17 @@ function burst(x,y,color,n,spd,life){
     particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-1,life:life||40,max:life||40,
       color,size:Math.random()*3+1.5});
   }
+}
+// floating score/text popup (screen-space, floats up & fades)
+function popup(x,y,text,color,size){ popups.push({x,y,text,color,size:size||16,life:52,max:52,vy:-0.9}); }
+// hazard hit: shield absorbs it (brief i-frames), else you die. returns true if game ended.
+function hazardHit(){
+  if(player.shield){
+    player.shield=false; player.iFrames=48; sfx('break'); shake=Math.max(shake,12);
+    burst(player.x,player.y,'#bff0ff',28,5.5,44); popup(player.x,player.y-cameraY,'SHIELD!','#bff0ff',20);
+    return false;
+  }
+  gameOver(); return true;
 }
 
 //==================================================================== UPDATE
@@ -479,6 +492,11 @@ function update(){
   if(player.y < player.bestY){ player.bestY = player.y; }
   score = Math.max(score, Math.floor((H-80 - player.bestY)/8));
 
+  // ---- score juice: milestones + new best
+  if(score>=nextMilestone){ popup(W/2, H*0.4, nextMilestone.toLocaleString()+'!', '#ffd24a', 34);
+    sfx('coin'); shake=Math.max(shake,6); nextMilestone += 1000; }
+  if(!beatBest && best>0 && score>best){ beatBest=true; popup(W/2, H*0.32, 'NEW BEST!', '#5dff00', 26); sfx('spring'); }
+
   // ---- biome by altitude
   biome = biomeState();
   if(biome.index>lastBiomeIdx){ lastBiomeIdx=biome.index; showBiome(biome.name, biome.star); }
@@ -523,6 +541,7 @@ function update(){
     if(dx*dx+dy*dy < (o.r+player.w*0.5)*(o.r+player.w*0.5)){
       o.got=true; runCoins++; score+=15; sfx('coin');
       burst(o.x,o.y,'#ffd24a',14,3.5,30); bumpCombo(1);
+      popup(o.x, o.y-cameraY, '+15', '#ffd24a', 16);
     }
   }
 
@@ -534,31 +553,33 @@ function update(){
     if(dx*dx+dy*dy < (pu.r+player.w*0.5)*(pu.r+player.w*0.5)){
       pu.got=true; shake=Math.max(shake,8);
       if(pu.kind==='jet'){ player.jetpack=JET_DUR; sfx('spring'); burst(pu.x,pu.y,'#ffae00',22,4.5,38); }
-      else { player.magnet=MAG_DUR; sfx('coin'); burst(pu.x,pu.y,'#00e5ff',22,4.5,38); }
+      else if(pu.kind==='mag'){ player.magnet=MAG_DUR; sfx('coin'); burst(pu.x,pu.y,'#00e5ff',22,4.5,38); }
+      else { player.shield=true; sfx('spring'); burst(pu.x,pu.y,'#bff0ff',22,4.5,38); popup(pu.x,pu.y-cameraY,'🛡️','#bff0ff',22); }
     }
   }
 
-  // ---- hazards (biome-specific). Jetpack = you rocket THROUGH everything (immune)
-  const invuln = player.jetpack>0;
+  // ---- hazards (biome-specific). Jetpack/shield-iframes = you pass THROUGH (immune)
+  if(player.iFrames>0) player.iFrames--;
+  const invuln = player.jetpack>0 || player.iFrames>0;
   for(const h of hazards){
     if(h.type==='laser'){
       const cp=(t+h.phase)%h.period, on=cp<h.onDur;
-      if(!invuln && on && ((prevY-h.y)*(player.y-h.y)<=0 || Math.abs(player.y-h.y)<8)){ gameOver(); return; }
+      if(!invuln && on && ((prevY-h.y)*(player.y-h.y)<=0 || Math.abs(player.y-h.y)<8)){ if(hazardHit()) return; }
     } else if(h.type==='ufo'){
       h.x+=h.vx; if(h.x<16||h.x>W-16) h.vx*=-1; h.ang+=0.05;
       const dx=h.x-player.x, dy=h.y-player.y, rr2=h.r+player.w*0.4;
-      if(!invuln && dx*dx+dy*dy < rr2*rr2){ gameOver(); return; }
+      if(!invuln && dx*dx+dy*dy < rr2*rr2){ if(hazardHit()) return; }
     } else if(h.type==='saw'){
       h.x+=h.vx; if(h.x<14||h.x>W-14) h.vx*=-1; h.ang+=0.4;
       const dx=h.x-player.x, dy=h.y-player.y, rr2=h.r+player.w*0.32;
-      if(!invuln && dx*dx+dy*dy < rr2*rr2){ gameOver(); return; }
+      if(!invuln && dx*dx+dy*dy < rr2*rr2){ if(hazardHit()) return; }
     } else {   // hole: pulls you in
       h.ang+=0.12;
       const hdx=h.x-player.x, hdy=h.y-player.y, hd=Math.hypot(hdx,hdy)||1, pull=150;
       if(hd<pull){
         let f=(1-hd/pull)*0.95; if(invuln) f*=0.4;   // jetpack lets you power out
         player.vx+=hdx/hd*f*2.4; player.vy+=hdy/hd*f*2.0;
-        if(hd<h.r*0.7 && !invuln){ gameOver(); return; }
+        if(hd<h.r*0.7 && !invuln){ if(hazardHit()) return; }
       }
     }
   }
@@ -566,14 +587,20 @@ function update(){
   // ---- combo decay
   if(comboTimer>0){ comboTimer--; if(comboTimer===0) combo=0; }
 
-  // ---- particles
+  // ---- particles + popups
   for(const pa of particles){ pa.x+=pa.vx; pa.y+=pa.vy; pa.vy+=0.15; pa.vx*=.98; pa.life--; }
   particles = particles.filter(p=>p.life>0);
+  for(const p of popups){ p.y+=p.vy; p.vy*=0.96; p.life--; }
+  popups = popups.filter(p=>p.life>0);
 
   if(shake>0) shake*=.86;
 
-  // ---- death
-  if(player.y - cameraY > H + 40){ gameOver(); }
+  // ---- death (shield rescues you from a fall once)
+  if(player.y - cameraY > H + 40){
+    if(player.shield){ player.shield=false; player.iFrames=30; player.y=cameraY+H*0.52; player.vy=JUMP;
+      sfx('spring'); shake=14; burst(player.x,player.y,'#bff0ff',30,6,46); popup(player.x,player.y-cameraY,'SAVED!','#bff0ff',24); }
+    else gameOver();
+  }
 }
 function bumpCombo(n){ combo+=n; maxCombo=Math.max(maxCombo,combo); comboTimer=90;
   const el=document.getElementById('combo');
@@ -628,6 +655,14 @@ function draw(){
     ctx.beginPath(); ctx.arc(player.x,player.y,32+Math.sin(t*0.35)*3,0,6.28); ctx.stroke();
     ctx.restore();
   }
+  if(player.shield || player.iFrames>0){      // protective bubble (solid when armed, flicker during i-frames)
+    const armed=player.shield;
+    ctx.save(); ctx.globalAlpha=armed ? 0.5+0.2*Math.sin(t*0.2) : 0.3*(t%6<3?1:0.3);
+    ctx.strokeStyle='#bff0ff'; ctx.lineWidth=2.5; ctx.shadowColor='#9becff'; ctx.shadowBlur=16;
+    ctx.beginPath(); ctx.arc(player.x,player.y-2,27,0,6.28); ctx.stroke();
+    if(armed){ ctx.globalAlpha=0.08; ctx.fillStyle='#bff0ff'; ctx.fill(); }
+    ctx.restore();
+  }
   drawPlayer();
   // also render the hero on the opposite edge while straddling the wrap seam (seamless wrap)
   if(player.x < 30) drawPlayer(player.x + W);
@@ -639,6 +674,18 @@ function draw(){
   }
   ctx.globalAlpha=1; ctx.shadowBlur=0;
   ctx.restore();
+
+  // floating score/text popups (screen space)
+  if(popups.length){
+    ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
+    for(const p of popups){
+      ctx.globalAlpha=Math.min(1,p.life/18); ctx.fillStyle=p.color;
+      ctx.font='800 '+p.size+'px -apple-system,system-ui,sans-serif';
+      ctx.shadowColor=p.color; ctx.shadowBlur=12;
+      ctx.fillText(p.text, p.x, p.y);
+    }
+    ctx.restore();
+  }
 
   // glitch-void overlay (screen space)
   if(B.accent==='glitch') drawGlitch();
@@ -739,14 +786,15 @@ function drawOrb(o){
 
 function drawPowerup(pu){
   const y=pu.y+Math.sin(pu.bob)*3;
-  const isJet=pu.kind==='jet', col=isJet?'#ffae00':'#00e5ff';
+  const col = pu.kind==='jet'?'#ffae00' : pu.kind==='mag'?'#00e5ff' : '#bff0ff';
+  const icon = pu.kind==='jet'?'🚀' : pu.kind==='mag'?'🧲' : '🛡️';
   ctx.save();
   ctx.shadowColor=col; ctx.shadowBlur=18;
   ctx.fillStyle='rgba(8,8,22,0.92)'; rr(pu.x-pu.r,y-pu.r,pu.r*2,pu.r*2,8); ctx.fill();
   ctx.lineWidth=2.2; ctx.strokeStyle=col; rr(pu.x-pu.r,y-pu.r,pu.r*2,pu.r*2,8); ctx.stroke();
   ctx.shadowBlur=0;
   ctx.font='bold 16px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText(isJet?'🚀':'🧲', pu.x, y+1);
+  ctx.fillText(icon, pu.x, y+1);
   ctx.restore();
 }
 
@@ -923,6 +971,7 @@ function updatePowerHud(){
   let frac=0,label='',col='#00e5ff';
   if(player.jetpack>0){ frac=player.jetpack/JET_DUR; label='🚀 JETPACK'; col='#ffae00'; }
   else if(player.magnet>0){ frac=player.magnet/MAG_DUR; label='🧲 MAGNET'; col='#00e5ff'; }
+  else if(player.shield){ frac=1; label='🛡️ SHIELD'; col='#bff0ff'; }
   if(frac>0){ el.style.opacity='1'; el.style.setProperty('--pc',col);
     el.innerHTML=`<span>${label}</span><div class="trk"><i style="width:${(frac*100).toFixed(0)}%"></i></div>`; }
   else el.style.opacity='0';
